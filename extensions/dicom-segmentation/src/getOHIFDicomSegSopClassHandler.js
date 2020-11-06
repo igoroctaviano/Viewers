@@ -1,6 +1,10 @@
 import { MODULE_TYPES, utils } from '@ohif/core';
 import loadSegmentation from './loadSegmentation';
 import getSourceDisplaySet from './getSourceDisplaySet';
+import OHIF from '@ohif/core';
+import dcmjs from 'dcmjs';
+
+const { DicomLoaderService } = OHIF.utils;
 
 // TODO: Should probably use dcmjs for this
 const SOP_CLASS_UIDS = {
@@ -62,11 +66,84 @@ export default function getSopClassHandlerModule({ servicesManager }) {
         return getSourceDisplaySet(studies, segDisplaySet);
       };
 
-      segDisplaySet.load = function(referencedDisplaySet, studies) {
-        return loadSegmentation(segDisplaySet, referencedDisplaySet, studies);
+      segDisplaySet.load = async function(referencedDisplaySet, studies) {
+        const { StudyInstanceUID } = referencedDisplaySet;
+        segDisplaySet.isLoaded = true;
+        const segArrayBuffer = await DicomLoaderService.findDicomDataPromise(
+          segDisplaySet,
+          studies
+        );
+        const dicomData = dcmjs.data.DicomMessage.readFile(segArrayBuffer);
+        const dataset = dcmjs.data.DicomMetaDictionary.naturalizeDataset(
+          dicomData.dict
+        );
+        dataset._meta = dcmjs.data.DicomMetaDictionary.namifyDataset(dicomData.meta);
+        const imageIds = _getImageIdsForDisplaySet(
+          studies,
+          StudyInstanceUID,
+          referencedDisplaySet.SeriesInstanceUID
+        );
+        return new Promise((resolve, reject) => {
+          let results;
+          try {
+            results = _parseSeg(segArrayBuffer, imageIds);
+          } catch (error) {
+            segDisplaySet.isLoaded = false;
+            segDisplaySet.loadError = true;
+            reject(error);
+          }
+          const { labelmapBufferArray, segMetadata, segmentsOnFrame, segmentsOnFrameArray } = results;
+
+          if (labelmapBufferArray.length > 1){
+            for (let i = 0; i < labelmapBufferArray.length; ++i){
+              loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[i], segMetadata, segmentsOnFrameArray[i]);
+              //const labelmapIndex = loadSegmentation(i, imageIds, segDisplaySet, labelmapBufferArray[i], segMetadata, segmentsOnFrame);
+            }
+          } else {
+            loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[0], segMetadata, segmentsOnFrame);
+          }
+          segDisplaySet.labelmapIndex = 0;
+
+          resolve();
+        });
       };
 
       return segDisplaySet;
     },
   };
+}
+
+function _parseSeg(arrayBuffer, imageIds) {
+  return dcmjs.adapters.Cornerstone.Segmentation.generateToolState(
+    imageIds,
+    arrayBuffer,
+    cornerstone.metaData
+  );
+}
+
+function _getImageIdsForDisplaySet(
+  studies,
+  StudyInstanceUID,
+  SeriesInstanceUID
+) {
+  const study = studies.find(
+    study => study.StudyInstanceUID === StudyInstanceUID
+  );
+
+  const displaySets = study.displaySets.filter(displaySet => {
+    return displaySet.SeriesInstanceUID === SeriesInstanceUID;
+  });
+
+  if (displaySets.length > 1) {
+    console.warn(
+      'More than one display set with the same SeriesInstanceUID. This is not supported yet...'
+    );
+    // TODO -> We could make check the instance list and see if any match?
+    // Do we split the segmentation into two cornerstoneTools segmentations if there are images in both series?
+    // ^ Will that even happen?
+  }
+
+  const referencedDisplaySet = displaySets[0];
+
+  return referencedDisplaySet.images.map(image => image.getImageId());
 }
