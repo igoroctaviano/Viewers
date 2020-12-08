@@ -5,6 +5,7 @@ import OHIF from '@ohif/core';
 import dcmjs from 'dcmjs';
 
 const { DicomLoaderService } = OHIF.utils;
+const { DicomMessage, DicomMetaDictionary } = dcmjs.data;
 
 // TODO: Should probably use dcmjs for this
 const SOP_CLASS_UIDS = {
@@ -20,7 +21,7 @@ export default function getSopClassHandlerModule({ servicesManager }) {
     id: 'OHIFDicomSegSopClassHandler',
     type: MODULE_TYPES.SOP_CLASS_HANDLER,
     sopClassUIDs,
-    getDisplaySetFromSeries: function(
+    getDisplaySetFromSeries: function (
       series,
       study,
       dicomWebClient,
@@ -50,7 +51,6 @@ export default function getSopClassHandlerModule({ servicesManager }) {
         StudyInstanceUID,
         FrameOfReferenceUID,
         authorizationHeaders,
-        metadata,
         isDerived: true,
         referencedDisplaySetUID: null, // Assigned when loaded.
         labelmapIndex: null, // Assigned when loaded.
@@ -62,22 +62,20 @@ export default function getSopClassHandlerModule({ servicesManager }) {
         metadata,
       };
 
-      segDisplaySet.getSourceDisplaySet = function(studies) {
+      segDisplaySet.getSourceDisplaySet = function (studies) {
         return getSourceDisplaySet(studies, segDisplaySet);
       };
 
-      segDisplaySet.load = async function(referencedDisplaySet, studies) {
-        const { StudyInstanceUID } = referencedDisplaySet;
+      segDisplaySet.load = async function (referencedDisplaySet, studies) {
         segDisplaySet.isLoaded = true;
+        const { StudyInstanceUID } = referencedDisplaySet;
         const segArrayBuffer = await DicomLoaderService.findDicomDataPromise(
           segDisplaySet,
           studies
         );
-        const dicomData = dcmjs.data.DicomMessage.readFile(segArrayBuffer);
-        const dataset = dcmjs.data.DicomMetaDictionary.naturalizeDataset(
-          dicomData.dict
-        );
-        dataset._meta = dcmjs.data.DicomMetaDictionary.namifyDataset(dicomData.meta);
+        const dicomData = DicomMessage.readFile(segArrayBuffer);
+        const dataset = DicomMetaDictionary.naturalizeDataset(dicomData.dict);
+        dataset._meta = DicomMetaDictionary.namifyDataset(dicomData.meta);
         const imageIds = _getImageIdsForDisplaySet(
           studies,
           StudyInstanceUID,
@@ -94,10 +92,9 @@ export default function getSopClassHandlerModule({ servicesManager }) {
           }
           const { labelmapBufferArray, segMetadata, segmentsOnFrame, segmentsOnFrameArray } = results;
 
-          if (labelmapBufferArray.length > 1){
-            for (let i = 0; i < labelmapBufferArray.length; ++i){
-              loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[i], segMetadata, segmentsOnFrameArray[i]);
-              //const labelmapIndex = loadSegmentation(i, imageIds, segDisplaySet, labelmapBufferArray[i], segMetadata, segmentsOnFrame);
+          if (labelmapBufferArray.length > 1) {
+            for (let i = 0; i < labelmapBufferArray.length; ++i) {
+              loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[i], segMetadata, segmentsOnFrame, segmentsOnFrameArray[i]);
             }
           } else {
             loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[0], segMetadata, segmentsOnFrame);
