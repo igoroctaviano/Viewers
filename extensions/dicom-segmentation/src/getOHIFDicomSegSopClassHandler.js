@@ -97,7 +97,7 @@ export default function getSopClassHandlerModule({ servicesManager }) {
               loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[i], segMetadata, segmentsOnFrame, segmentsOnFrameArray[i]);
             }
           } else {
-            loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[0], segMetadata, segmentsOnFrame);
+            loadSegmentation(imageIds, segDisplaySet, labelmapBufferArray[0], segMetadata, segmentsOnFrame, []);
           }
           segDisplaySet.labelmapIndex = 0;
 
