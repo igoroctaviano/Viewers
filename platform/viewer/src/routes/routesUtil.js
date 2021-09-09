@@ -1,7 +1,10 @@
 import { asyncComponent, retryImport } from '@ohif/ui';
 import OHIF from '@ohif/core';
 
+import { extensionManager } from '../App';
+
 const { urlUtil: UrlUtil } = OHIF.utils;
+const { MODULE_TYPES } = OHIF;
 
 // Dynamic Import Routes (CodeSplitting)
 const IHEInvokeImageDisplay = asyncComponent(() =>
@@ -42,7 +45,7 @@ const ROUTES_DEF = {
       component: StandaloneRouting,
     },
     list: {
-      path: ['/studylist', '/'],
+      path: ['/studylist'],
       component: StudyListRouting,
       condition: appConfig => {
         return appConfig.showStudyList;
@@ -80,6 +83,15 @@ const ROUTES_DEF = {
 };
 
 const getRoutes = appConfig => {
+  const routesExtensionModules = extensionManager.modules[MODULE_TYPES.ROUTES];
+  const allExtensionRoutes = routesExtensionModules.map(m => m.module).flat();
+
+  if (Array.isArray(allExtensionRoutes)) {
+    for (let routeDefinition of allExtensionRoutes) {
+      ROUTES_DEF.default = { ...ROUTES_DEF.default, ...routeDefinition };
+    }
+  }
+
   const routes = [];
   for (let keyConfig in ROUTES_DEF) {
     const routesConfig = ROUTES_DEF[keyConfig];

@@ -1,10 +1,13 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { utils, user } from '@ohif/core';
+import { utils, user, MODULE_TYPES } from '@ohif/core';
 //
 import ConnectedViewerRetrieveStudyData from '../connectedComponents/ConnectedViewerRetrieveStudyData';
+import ConnectedViewer from '../connectedComponents/ConnectedViewer';
 import useServer from '../customHooks/useServer';
 import useQuery from '../customHooks/useQuery';
+import { extensionManager } from '../App';
+
 const { urlUtil: UrlUtil } = utils;
 
 /**
@@ -46,6 +49,19 @@ function ViewerRouting({ match: routeMatch, location: routeLocation }) {
   const seriesUIDs = getSeriesInstanceUIDs(seriesInstanceUIDs, routeLocation);
 
   if (server && studyUIDs) {
+    const dataExtensionModules = extensionManager.modules[MODULE_TYPES.DATA];
+    if (dataExtensionModules && dataExtensionModules.length > 0) {
+      const { module } = dataExtensionModules[0];
+      const { component: DataComponent } = module[0];
+      return (
+        <DataComponent
+          studyInstanceUIDs={studyUIDs}
+          seriesInstanceUIDs={seriesUIDs}
+          viewerComponent={ConnectedViewer}
+        />
+      );
+    }
+
     return (
       <ConnectedViewerRetrieveStudyData
         studyInstanceUIDs={studyUIDs}
