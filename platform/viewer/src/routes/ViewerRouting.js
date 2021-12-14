@@ -37,6 +37,19 @@ function ViewerRouting({ match: routeMatch, location: routeLocation }) {
   let query = useQuery();
   const authToken = query.get('token');
 
+  /**
+   * Gets context via query strings and set custom headers
+   * to be sent on every dicomweb-client request.
+   *
+   * In order for this to work, cors needs to be enabled in the server.
+   */
+  const studyPoolUID = query.get('studyPoolUID');
+  const userUID = query.get('userUID');
+  user.setHeaders({
+    'study-pool-uid': studyPoolUID,
+    'user-uid': userUID,
+  });
+
   if (authToken) {
     user.getAccessToken = () => authToken;
   }

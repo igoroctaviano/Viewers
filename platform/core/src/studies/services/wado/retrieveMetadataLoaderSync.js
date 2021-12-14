@@ -1,4 +1,5 @@
 import { api } from 'dicomweb-client';
+import OHIF from '@ohif/core';
 import DICOMWeb from '../../../DICOMWeb/';
 import { createStudyFromSOPInstanceList } from './studyInstanceHelpers';
 import RetrieveMetadataLoader from './retrieveMetadataLoader';
@@ -60,7 +61,10 @@ export default class RetrieveMetadataLoaderSync extends RetrieveMetadataLoader {
     const { server } = this;
     const client = new api.DICOMwebClient({
       url: server.wadoRoot,
-      headers: DICOMWeb.getAuthorizationHeader(server),
+      headers: {
+        ...DICOMWeb.getAuthorizationHeader(server),
+        ...OHIF.user.getHeaders(),
+      },
       errorInterceptor: errorHandler.getHTTPErrorHandler(),
       requestHooks: [getXHRRetryRequestHook()],
     });

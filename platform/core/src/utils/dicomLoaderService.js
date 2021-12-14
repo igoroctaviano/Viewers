@@ -1,6 +1,7 @@
 import cornerstone from 'cornerstone-core';
 import cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
 import { api } from 'dicomweb-client';
+import OHIF from '@ohif/core';
 import DICOMWeb from '../DICOMWeb';
 
 import errorHandler from '../errorHandler';
@@ -60,7 +61,10 @@ const wadorsRetriever = (
   studyInstanceUID,
   seriesInstanceUID,
   sopInstanceUID,
-  headers = DICOMWeb.getAuthorizationHeader(),
+  headers = {
+    ...DICOMWeb.getAuthorizationHeader(),
+    ...OHIF.user.getHeaders(),
+  },
   errorInterceptor = errorHandler.getHTTPErrorHandler()
 ) => {
   const config = {
