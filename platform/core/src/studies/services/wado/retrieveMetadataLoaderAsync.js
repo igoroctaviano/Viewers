@@ -1,5 +1,6 @@
 import StaticWadoClient from '../qido/StaticWadoClient';
 import dcmjs from 'dcmjs';
+import OHIF from '@ohif/core';
 import DICOMWeb from '../../../DICOMWeb/';
 import RetrieveMetadataLoader from './retrieveMetadataLoader';
 import { sortStudySeries, sortingCriteria } from '../../sortStudy';
@@ -76,7 +77,10 @@ export default class RetrieveMetadataLoaderAsync extends RetrieveMetadataLoader 
     const client = new StaticWadoClient({
       ...server,
       url: server.qidoRoot,
-      headers: DICOMWeb.getAuthorizationHeader(server),
+      headers: {
+        ...DICOMWeb.getAuthorizationHeader(server),
+        ...OHIF.user.getHeaders(),
+      },
       errorInterceptor: errorHandler.getHTTPErrorHandler(),
       requestHooks: [getXHRRetryRequestHook()],
     });

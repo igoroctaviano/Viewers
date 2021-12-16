@@ -1,4 +1,5 @@
 import { api } from 'dicomweb-client';
+import OHIF from '@ohif/core';
 import DICOMWeb from '../../DICOMWeb';
 import str2ab from '../str2ab';
 import unpackOverlay from './unpackOverlay';
@@ -68,7 +69,10 @@ async function _getOverlayData(tag, server) {
 
   const config = {
     url: server.wadoRoot, //BulkDataURI is absolute, so this isn't used
-    headers: DICOMWeb.getAuthorizationHeader(server),
+    headers: {
+      ...DICOMWeb.getAuthorizationHeader(server),
+      ...OHIF.user.getHeaders(),
+    },
     errorInterceptor: errorHandler.getHTTPErrorHandler(),
     requestHooks: [getXHRRetryRequestHook()],
   };

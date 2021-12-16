@@ -21,11 +21,27 @@ import filesToStudies from '../lib/filesToStudies.js';
 import UserManagerContext from '../context/UserManagerContext';
 import WhiteLabelingContext from '../context/WhiteLabelingContext';
 import AppContext from '../context/AppContext';
+import useQuery from '../customHooks/useQuery.js';
 
 const { urlUtil: UrlUtil } = OHIF.utils;
 
 function StudyListRoute(props) {
   const { history, server, user, studyListFunctionsEnabled } = props;
+
+  /**
+   * Gets context via query strings and set custom headers
+   * to be sent on every dicomweb-client request.
+   *
+   * In order for this to work, cors needs to be enabled in the server.
+   */
+  let query = useQuery();
+  const studyPoolUID = query.get('studyPoolUID');
+  const userUID = query.get('userUID');
+  OHIF.user.setHeaders({
+    'study-pool-uid': studyPoolUID,
+    'user-uid': userUID,
+  });
+
   const [t] = useTranslation('Common');
   // ~~ STATE
   const [sort, setSort] = useState({

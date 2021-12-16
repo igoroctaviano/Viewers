@@ -7,6 +7,7 @@ import OHIFError from '../OHIFError';
 import { SeriesMetadata } from './SeriesMetadata';
 // - createStacks
 import { api } from 'dicomweb-client';
+import OHIF from '@ohif/core';
 // - createStacks
 import { isImage } from '../../utils/isImage';
 import {
@@ -979,7 +980,10 @@ function _getDisplaySetFromSopClassModule(
   }
 
   const plugin = handlersForSopClassUID[0];
-  const headers = DICOMWeb.getAuthorizationHeader();
+  const headers = {
+    ...DICOMWeb.getAuthorizationHeader(),
+    ...OHIF.user.getHeaders()
+  };
   const errorInterceptor = errorHandler.getHTTPErrorHandler();
   const dicomWebClient = new dwc({
     url: study.getData().wadoRoot,

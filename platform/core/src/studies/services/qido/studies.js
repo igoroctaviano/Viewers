@@ -1,4 +1,5 @@
 import { api } from 'dicomweb-client';
+import OHIF from '@ohif/core';
 import StaticWadoClient from './StaticWadoClient';
 import DICOMWeb from '../../../DICOMWeb/';
 
@@ -120,7 +121,10 @@ export default function Studies(server, filter) {
   const config = {
     ...server,
     url: server.qidoRoot,
-    headers: DICOMWeb.getAuthorizationHeader(server),
+    headers: {
+      ...DICOMWeb.getAuthorizationHeader(server),
+      ...OHIF.user.getHeaders(),
+    },
     errorInterceptor: errorHandler.getHTTPErrorHandler(),
     requestHooks: [getXHRRetryRequestHook()],
   };
