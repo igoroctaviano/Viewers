@@ -37,7 +37,20 @@ const someInvalidStrings = strings => {
   return invalid;
 };
 
-const getImageInstance = dataset => {
+const getImageInstance = (dataset, studies) => {
+  const study = studies.find(
+    s => s.StudyInstanceUID === dataset.StudyInstanceUID
+  );
+  const series = study.series.find(
+    s => s.SeriesInstanceUID === dataset.SeriesInstanceUID
+  );
+  const instance = series.instances.find(
+    i => i.metadata.SOPInstanceUID === dataset.SOPInstanceUID
+  );
+  if (instance) {
+    return instance;
+  }
+
   return dataset && dataset.images && dataset.images[0];
 };
 
@@ -109,11 +122,11 @@ class DicomLoaderService {
     }
   }
 
-  getDataByImageType(dataset) {
-    const imageInstance = getImageInstance(dataset);
+  getDataByImageType(dataset, studies) {
+    const imageInstance = getImageInstance(dataset, studies);
 
     if (imageInstance) {
-      const imageId = getImageInstanceId(imageInstance);
+      let imageId = getImageInstanceId(imageInstance);
       let getDicomDataMethod = fetchIt;
       const loaderType = getImageLoaderType(imageId);
 
@@ -155,7 +168,8 @@ class DicomLoaderService {
           break;
       }
 
-      return getDicomDataMethod();
+      imageId = imageId.substring(imageId.indexOf(':') + 1);
+      return getDicomDataMethod(imageId);
     }
   }
 
@@ -184,7 +198,7 @@ class DicomLoaderService {
 
   *getLoaderIterator(dataset, studies) {
     yield this.getLocalData(dataset, studies);
-    yield this.getDataByImageType(dataset);
+    yield this.getDataByImageType(dataset, studies);
     yield this.getDataByDatasetType(dataset);
   }
 
