@@ -21,6 +21,8 @@ import {
   extensions as defaultExtensions,
 } from './pluginImports';
 import loadDynamicConfig from './loadDynamicConfig';
+import WorkList from './routes/WorkList/WorkList';
+import DataSourceWrapper from './routes/DataSourceWrapper';
 
 loadDynamicConfig(window.config).then(config_json => {
   // Reset Dynamic config if defined
@@ -44,4 +46,4 @@ loadDynamicConfig(window.config).then(config_json => {
   ReactDOM.render(app, document.getElementById('root'));
 });
 
-export { history };
+export { history, WorkList, DataSourceWrapper };

@@ -170,8 +170,12 @@ export default function ModeRoute({
   const hotkeyName = hotkeyObj?.name || 'hotkey-definitions-v2';
 
   // An undefined dataSourceName implies that the active data source that is already set in the ExtensionManager should be used.
-  if (dataSourceName !== undefined) {
+  if (dataSourceName !== undefined && !mode.defaultDataSourceName) {
     extensionManager.setActiveDataSource(dataSourceName);
+  }
+
+  if (mode.defaultDataSourceName) {
+    extensionManager.setActiveDataSource(mode.defaultDataSourceName);
   }
 
   const dataSource = extensionManager.getActiveDataSource()[0];

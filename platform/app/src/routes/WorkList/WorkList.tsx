@@ -187,10 +187,12 @@ function WorkList({
       skipEmptyString: true,
     });
 
-    navigate({
-      pathname: '/',
-      search: search ? `?${search}` : undefined,
-    });
+    if (search) {
+      navigate({
+        pathname: '/',
+        search: search ? `?${search}` : undefined,
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedFilterValues]);
 

@@ -4,8 +4,8 @@ window.config = {
   extensions: [],
   modes: [],
   customizationService: {
-    // Shows a custom route -access via http://localhost:3000/custom
-    // helloPage: '@ohif/extension-default.customizationModule.helloPage',
+    gcpWorklist:
+      '@ohif/extension-google-cloud-healthcare.customizationModule.gcpWorklist',
   },
   showStudyList: true,
   // some windows systems have issues with more than 3 web workers
@@ -34,7 +34,50 @@ window.config = {
   //   // regex: /(https:\/\/hospital.com(\/[0-9A-Za-z.]+)*)|(https:\/\/othersite.com(\/[0-9A-Za-z.]+)*)/
   //   regex: /.*/,
   // },
+  oidc: [
+    {
+      authority: 'https://accounts.google.com',
+      client_id:
+        '370953977065-o32uf5cn5f4bovtogdu862mlnhbcv9hk.apps.googleusercontent.com',
+      redirect_uri: '/callback',
+      response_type: 'id_token token',
+      scope:
+        'email profile openid https://www.googleapis.com/auth/cloudplatformprojects.readonly https://www.googleapis.com/auth/cloud-healthcare',
+      post_logout_redirect_uri: '/logout-redirect.html',
+      revoke_uri: 'https://accounts.google.com/o/oauth2/revoke?token=',
+      automaticSilentRenew: true,
+      revokeAccessTokenOnSignout: true,
+    },
+  ],
   dataSources: [
+    {
+      friendlyName: 'GCP DICOMWeb Server',
+      namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
+      sourceName: 'gcpdicomweb',
+      configuration: {
+        name: 'gcpdicomweb',
+        qidoSupportsIncludeField: false,
+        imageRendering: 'wadors',
+        thumbnailRendering: 'wadors',
+        enableStudyLazyLoad: true,
+        supportsFuzzyMatching: false,
+        supportsWildcard: false,
+        singlepart: 'bulkdata,video,pdf',
+        useBulkDataURI: false,
+        onConfiguration: (dicomWebConfig, options) => {
+          const { params } = options;
+          const { project, location, dataset, dicomStore } = params;
+          const pathUrl = `https://healthcare.googleapis.com/v1/projects/${project}/locations/${location}/datasets/${dataset}/dicomStores/${dicomStore}/dicomWeb`;
+          return {
+            ...dicomWebConfig,
+            wadoRoot: pathUrl,
+            qidoRoot: pathUrl,
+            wadoUri: pathUrl,
+            wadoUriRoot: pathUrl,
+          };
+        },
+      },
+    },
     {
       friendlyName: 'dcmjs DICOMWeb Server',
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',

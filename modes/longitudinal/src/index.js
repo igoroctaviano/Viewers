@@ -69,7 +69,9 @@ function modeFactory() {
     // TODO: We're using this as a route segment
     // We should not be.
     id,
-    routeName: 'viewer',
+    routeName:
+      'projects/:project/locations/:location/datasets/:dataset/dicomStores/:dicomStore/study/:StudyInstanceUIDs',
+    defaultDataSourceName: 'gcpdicomweb',
     displayName: 'Basic Viewer',
     /**
      * Lifecycle hooks
