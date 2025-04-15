@@ -17,6 +17,7 @@ import { useToggleHangingProtocolStore } from './stores/useToggleHangingProtocol
 import { useViewportsByPositionStore } from './stores/useViewportsByPositionStore';
 import { useToggleOneUpViewportGridStore } from './stores/useToggleOneUpViewportGridStore';
 import requestDisplaySetCreationForStudy from './Panels/requestDisplaySetCreationForStudy';
+import promptSaveReport from './utils/promptSaveReport';
 
 export type HangingProtocolParams = {
   protocolId?: string;
@@ -73,6 +74,14 @@ const commandsModule = ({
           multiMonitorService.run(screenDelta, commands, options);
         }, 1000);
       }
+    },
+
+    /** Displays a prompt and then save the report if relevant */
+    promptSaveReport: props => {
+      const { StudyInstanceUID } = props;
+      promptSaveReport({ servicesManager, commandsManager, extensionManager }, props, {
+        data: { StudyInstanceUID },
+      });
     },
 
     /**
@@ -140,8 +149,9 @@ const commandsModule = ({
         type: type,
       });
     },
-    clearMeasurements: () => {
-      measurementService.clearMeasurements();
+
+    clearMeasurements: options => {
+      measurementService.clearMeasurements(options.measurementFilter);
     },
 
     /**
@@ -340,7 +350,6 @@ const commandsModule = ({
       const { protocol } = hangingProtocolService.getActiveProtocol();
       const onLayoutChange = protocol.callbacks?.onLayoutChange;
       if (commandsManager.run(onLayoutChange, { numRows, numCols }) === false) {
-        console.log('setViewportGridLayout running', onLayoutChange, numRows, numCols);
         // Don't apply the layout if the run command returns false
         return;
       }
@@ -527,7 +536,11 @@ const commandsModule = ({
       const { activeViewportId, viewports } = viewportGridService.getState();
 
       const activeViewport = viewports.get(activeViewportId);
-      const activeDisplaySetInstanceUID = activeViewport.displaySetInstanceUIDs[0];
+      const activeDisplaySetInstanceUID = activeViewport?.displaySetInstanceUIDs?.[0];
+
+      if (!activeDisplaySetInstanceUID) {
+        return;
+      }
 
       const thumbnailList = document.querySelector('#ohif-thumbnail-list');
 
@@ -535,21 +548,9 @@ const commandsModule = ({
         return;
       }
 
-      const thumbnailListBounds = thumbnailList.getBoundingClientRect();
-
       const thumbnail = document.querySelector(`#thumbnail-${activeDisplaySetInstanceUID}`);
 
       if (!thumbnail) {
-        return;
-      }
-
-      const thumbnailBounds = thumbnail.getBoundingClientRect();
-
-      // This only handles a vertical thumbnail list.
-      if (
-        thumbnailBounds.top >= thumbnailListBounds.top &&
-        thumbnailBounds.top <= thumbnailListBounds.bottom
-      ) {
         return;
       }
 
@@ -613,7 +614,7 @@ const commandsModule = ({
         });
       }
 
-      viewportGridService.setDisplaySetsForViewports(updatedViewports);
+      commandsManager.run('setDisplaySetsForViewports', { viewportsToUpdate: updatedViewports });
 
       setTimeout(() => actions.scrollActiveThumbnailIntoView(), 0);
     },
@@ -621,6 +622,7 @@ const commandsModule = ({
 
   const definitions = {
     multimonitor: actions.multimonitor,
+    promptSaveReport: actions.promptSaveReport,
     loadStudy: actions.loadStudy,
     showContextMenu: actions.showContextMenu,
     closeContextMenu: actions.closeContextMenu,
@@ -641,6 +643,7 @@ const commandsModule = ({
     toggleOneUp: actions.toggleOneUp,
     openDICOMTagViewer: actions.openDICOMTagViewer,
     updateViewportDisplaySet: actions.updateViewportDisplaySet,
+    scrollActiveThumbnailIntoView: actions.scrollActiveThumbnailIntoView,
   };
 
   return {

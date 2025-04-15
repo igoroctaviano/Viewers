@@ -1,5 +1,7 @@
 import React from 'react';
-import { LabellingFlow } from '@ohif/ui';
+import { setAnnotationLabel } from '@cornerstonejs/tools/utilities';
+import { annotation } from '@cornerstonejs/tools';
+import { LabellingFlow } from '@ohif/ui-next';
 import { InputDialog } from '@ohif/ui-next';
 
 interface InputDialogDefaultProps {
@@ -57,6 +59,10 @@ export async function callInputDialog({
   submitOnEnter = true,
 }: {
   uiDialogService: AppTypes.UIDialogService;
+  defaultValue?: string;
+  title?: string;
+  placeholder?: string;
+  submitOnEnter?: boolean;
 }) {
   const dialogId = 'dialog-enter-annotation';
 
@@ -85,17 +91,19 @@ export async function callInputDialogAutoComplete({
   uiDialogService,
   labelConfig,
   renderContent = LabellingFlow,
+  element,
 }) {
   const exclusive = labelConfig ? labelConfig.exclusive : false;
   const dropDownItems = labelConfig ? labelConfig.items : [];
 
   const value = await new Promise<Map<string, string>>((resolve, reject) => {
-    const labellingDoneCallback = value => {
+    const labellingDoneCallback = newValue => {
       uiDialogService.hide('select-annotation');
-      if (typeof value === 'string') {
-        measurement.label = value;
+      if (measurement && typeof newValue === 'string') {
+        const sourceAnnotation = annotation.state.getAnnotation(measurement.uid);
+        setAnnotationLabel(sourceAnnotation, element, newValue);
       }
-      resolve(measurement);
+      resolve(newValue);
     };
 
     uiDialogService.show({

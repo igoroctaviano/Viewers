@@ -24,6 +24,7 @@ import IconMPR from './Sources/IconMPR';
 import Info from './Sources/Info';
 import InfoLink from './Sources/InfoLink';
 import InfoSeries from './Sources/InfoSeries';
+import JumpToSlice from './Sources/JumpToSlice';
 import ListView from './Sources/ListView';
 import LoadingSpinner from './Sources/LoadingSpinner';
 import Lock from './Sources/Lock';
@@ -38,6 +39,7 @@ import Pin from './Sources/Pin';
 import PinFill from './Sources/PinFill';
 import Plus from './Sources/Plus';
 import PowerOff from './Sources/PowerOff';
+import Redo from './Sources/Redo';
 import Refresh from './Sources/Refresh';
 import Rename from './Sources/Rename';
 import Series from './Sources/Series';
@@ -130,6 +132,7 @@ import {
   ToolSegmentAnything,
   ToolContract,
   ToolExpand,
+  ToolClickSegment,
 } from './Sources/Tools';
 import ActionNewDialog from './Sources/ActionNewDialog';
 import NotificationInfo from './Sources/NotificationInfo';
@@ -195,6 +198,7 @@ import NotificationWarning from './Sources/NotificationWarning';
 import ArrowRight from './Sources/ArrowRight';
 import ChevronLeft from './Sources/ChevronLeft';
 import StatusAlert from './Sources/StatusAlert';
+import Undo from './Sources/Undo';
 //
 //
 type IconProps = React.HTMLAttributes<SVGElement>;
@@ -594,9 +598,10 @@ export const Icons = {
   'checkbox-active': (props: IconProps) => CheckBoxChecked(props),
   'icon-tool-eraser': (props: IconProps) => ToolEraser(props),
   'icon-tool-brush': (props: IconProps) => ToolBrush(props),
-  'icon-tool-labelmap-assist': (props: IconProps) => ToolLabelmapAssist(props),
-  'icon-tool-segment-anything': (props: IconProps) => ToolSegmentAnything(props),
+  'icon-labelmap-slice-propagation': (props: IconProps) => ToolLabelmapAssist(props),
+  'icon-marker-labelmap': (props: IconProps) => ToolSegmentAnything(props),
   'icon-tool-threshold': (props: IconProps) => ToolThreshold(props),
+  'icon-tool-click-segment': (props: IconProps) => ToolClickSegment(props),
   'icon-tool-pet-segment': (props: IconProps) => ToolPETSegment(props),
   'icon-tool-interpolation': (props: IconProps) => ToolInterpolation(props),
   'icon-tool-bidirectional-segment': (props: IconProps) => ToolBidirectionalSegment(props),
@@ -717,6 +722,9 @@ export const Icons = {
   'tool-point': (props: IconProps) => ToolCircle(props),
   'tool-freehand-line': (props: IconProps) => ToolFreehand(props),
   clipboard: (props: IconProps) => Clipboard(props),
+  Undo,
+  Redo,
+  JumpToSlice,
 
   /** Adds an icon to the set of icons */
   addIcon: (name: string, icon) => {

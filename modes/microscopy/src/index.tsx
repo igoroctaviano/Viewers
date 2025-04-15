@@ -1,4 +1,3 @@
-import { hotkeys } from '@ohif/core';
 import i18n from 'i18next';
 
 import { id } from './id';
@@ -38,8 +37,6 @@ const extensionDependencies = {
 
 function modeFactory({ modeConfiguration }) {
   return {
-    // TODO: We're using this as a route segment
-    // We should not be.
     id,
     routeName: 'microscopy',
     displayName: i18n.t('Modes:Microscopy'),
@@ -47,11 +44,21 @@ function modeFactory({ modeConfiguration }) {
     /**
      * Lifecycle hooks
      */
-    onModeEnter: ({ servicesManager, extensionManager, commandsManager }: withAppTypes) => {
+    onModeEnter: ({ servicesManager }: withAppTypes) => {
       const { toolbarService } = servicesManager.services;
 
       toolbarService.addButtons(toolbarButtons);
       toolbarService.createButtonSection('primary', ['MeasurementTools', 'dragPan', 'TagBrowser']);
+
+      toolbarService.createButtonSection('measurementSection', [
+        'line',
+        'point',
+        'polygon',
+        'circle',
+        'box',
+        'freehandpolygon',
+        'freehandline',
+      ]);
     },
 
     onModeExit: ({ servicesManager }: withAppTypes) => {
@@ -79,9 +86,6 @@ function modeFactory({ modeConfiguration }) {
     routes: [
       {
         path: 'microscopy',
-        /*init: ({ servicesManager, extensionManager }) => {
-          //defaultViewerRouteInit
-        },*/
         layoutTemplate: ({ location, servicesManager }) => {
           return {
             id: ohif.layout,
@@ -89,7 +93,7 @@ function modeFactory({ modeConfiguration }) {
               leftPanels: [ohif.leftPanel],
               leftPanelResizable: true,
               leftPanelClosed: true, // we have problem with rendering thumbnails for microscopy images
-              rightPanelClosed: true, // we do not have the save microscopy measurements yet
+              // rightPanelClosed: true, // we do not have the save microscopy measurements yet
               rightPanels: [ohif.rightPanel],
               rightPanelResizable: true,
               viewports: [

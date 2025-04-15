@@ -15,21 +15,17 @@ import {
   SystemContextProvider,
 } from '@ohif/core';
 import {
-  ThemeWrapper,
-  ViewportDialogProvider,
-  CineProvider,
-  UserAuthenticationProvider,
-} from '@ohif/ui';
-import {
   ThemeWrapper as ThemeWrapperNext,
   NotificationProvider,
   ViewportGridProvider,
   DialogProvider,
+  CineProvider,
   TooltipProvider,
-  ToolboxProvider,
   Modal as ModalNext,
   ManagedDialog,
   ModalProvider,
+  ViewportDialogProvider,
+  UserAuthenticationProvider,
 } from '@ohif/ui-next';
 // Viewer Project
 // TODO: Should this influence study list?
@@ -54,7 +50,7 @@ function App({
      * Hosted at: https://ohif.org/where-i-host-the/viewer/
      * Value: `/where-i-host-the/viewer/`
      * */
-    routerBaseName: '/',
+    routerBasename: '/',
     /**
      *
      */
@@ -115,9 +111,7 @@ function App({
     [UserAuthenticationProvider, { service: userAuthenticationService }],
     [I18nextProvider, { i18n }],
     [ThemeWrapperNext],
-    [ThemeWrapper],
     [SystemContextProvider, { commandsManager, extensionManager, hotkeysManager, servicesManager }],
-    [ToolboxProvider],
     [ViewportGridProvider, { service: viewportGridService }],
     [ViewportDialogProvider, { service: uiViewportDialogService }],
     [CineProvider, { service: cineService }],

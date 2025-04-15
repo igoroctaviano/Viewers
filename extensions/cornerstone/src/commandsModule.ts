@@ -10,10 +10,12 @@ import {
   ToolGroupManager,
   Enums,
   utilities as cstUtils,
-  ReferenceLinesTool,
   annotation,
+  Types as ToolTypes,
 } from '@cornerstonejs/tools';
 import * as cornerstoneTools from '@cornerstonejs/tools';
+import * as labelmapInterpolation from '@cornerstonejs/labelmap-interpolation';
+import { ONNXSegmentationController } from '@cornerstonejs/ai';
 
 import { Types as OhifTypes, utils } from '@ohif/core';
 import i18n from '@ohif/i18n';
@@ -31,15 +33,59 @@ import toggleVOISliceSync from './utils/toggleVOISliceSync';
 import { usePositionPresentationStore, useSegmentationPresentationStore } from './stores';
 import { toolNames } from './initCornerstoneTools';
 import CornerstoneViewportDownloadForm from './utils/CornerstoneViewportDownloadForm';
+import { updateSegmentBidirectionalStats } from './utils/updateSegmentationStats';
+import { generateSegmentationCSVReport } from './utils/generateSegmentationCSVReport';
+import { getUpdatedViewportsForSegmentation } from './utils/hydrationUtils';
+
 const { DefaultHistoryMemo } = csUtils.HistoryMemo;
 const toggleSyncFunctions = {
   imageSlice: toggleImageSliceSync,
   voi: toggleVOISliceSync,
 };
 
+const { segmentation: segmentationUtils } = cstUtils;
+
+const getLabelmapTools = ({ toolGroupService }) => {
+  const labelmapTools = [];
+  const toolGroupIds = toolGroupService.getToolGroupIds();
+  toolGroupIds.forEach(toolGroupId => {
+    const toolGroup = cornerstoneTools.ToolGroupManager.getToolGroup(toolGroupId);
+    const tools = toolGroup.getToolInstances();
+    // tools is an object with toolName as the key and tool as the value
+    Object.keys(tools).forEach(toolName => {
+      const tool = tools[toolName];
+      if (tool instanceof cornerstoneTools.LabelmapBaseTool) {
+        labelmapTools.push(tool);
+      }
+    });
+  });
+  return labelmapTools;
+};
+
+const segmentAI = new ONNXSegmentationController({
+  autoSegmentMode: true,
+  models: {
+    sam_b: [
+      {
+        name: 'sam-b-encoder',
+        url: 'https://huggingface.co/schmuell/sam-b-fp16/resolve/main/sam_vit_b_01ec64.encoder-fp16.onnx',
+        size: 180,
+        key: 'encoder',
+      },
+      {
+        name: 'sam-b-decoder',
+        url: 'https://huggingface.co/schmuell/sam-b-fp16/resolve/main/sam_vit_b_01ec64.decoder.onnx',
+        size: 17,
+        key: 'decoder',
+      },
+    ],
+  },
+  modelName: 'sam_b',
+});
+let segmentAIEnabled = false;
+
 function commandsModule({
   servicesManager,
-  extensionManager,
   commandsManager,
 }: OhifTypes.Extensions.ExtensionParams): OhifTypes.Extensions.CommandsModule {
   const {
@@ -54,9 +100,9 @@ function commandsModule({
     colorbarService,
     hangingProtocolService,
     syncGroupService,
-  } = servicesManager.services;
-
-  const { measurementServiceSource } = this;
+    segmentationService,
+    displaySetService,
+  } = servicesManager.services as AppTypes.Services;
 
   function _getActiveViewportEnabledElement() {
     return getActiveViewportEnabledElement(viewportGridService);
@@ -67,7 +113,85 @@ function commandsModule({
     return toolGroupService.getToolGroupForViewport(viewport.id);
   }
 
+  function _getActiveSegmentationInfo() {
+    const viewportId = viewportGridService.getActiveViewportId();
+    const activeSegmentation = segmentationService.getActiveSegmentation(viewportId);
+    const segmentationId = activeSegmentation?.segmentationId;
+    const activeSegmentIndex = segmentationService.getActiveSegment(viewportId).segmentIndex;
+
+    return {
+      segmentationId,
+      segmentIndex: activeSegmentIndex,
+    };
+  }
+
   const actions = {
+    runSegmentBidirectional: async ({ segmentationId, segmentIndex } = {}) => {
+      // Get active segmentation if not specified
+      const targetSegmentation =
+        segmentationId && segmentIndex
+          ? { segmentationId, segmentIndex }
+          : _getActiveSegmentationInfo();
+
+      const { segmentationId: targetId, segmentIndex: targetIndex } = targetSegmentation;
+
+      // Get bidirectional measurement data
+      const bidirectionalData = await cstUtils.segmentation.getSegmentLargestBidirectional({
+        segmentationId: targetId,
+        segmentIndices: [targetIndex],
+      });
+
+      const activeViewportId = viewportGridService.getActiveViewportId();
+
+      // Process each bidirectional measurement
+      bidirectionalData.forEach(measurement => {
+        const { segmentIndex, majorAxis, minorAxis } = measurement;
+
+        // Create annotation
+        const annotation = cornerstoneTools.SegmentBidirectionalTool.hydrate(
+          activeViewportId,
+          [majorAxis, minorAxis],
+          {
+            segmentIndex,
+            segmentationId: targetId,
+          }
+        );
+
+        measurement.annotationUID = annotation.annotationUID;
+
+        // Update segmentation stats
+        const updatedSegmentation = updateSegmentBidirectionalStats({
+          segmentationId: targetId,
+          segmentIndex: targetIndex,
+          bidirectionalData: measurement,
+          segmentationService,
+          annotation,
+        });
+
+        // Save changes if needed
+        if (updatedSegmentation) {
+          segmentationService.addOrUpdateSegmentation({
+            segmentationId: targetId,
+            segments: updatedSegmentation.segments,
+          });
+        }
+      });
+
+      // get the active segmentIndex bidirectional annotation and jump to it
+      const activeBidirectional = bidirectionalData.find(
+        measurement => measurement.segmentIndex === targetIndex
+      );
+      commandsManager.run('jumpToMeasurement', {
+        uid: activeBidirectional.annotationUID,
+      });
+    },
+    interpolateLabelmap: () => {
+      const { segmentationId, segmentIndex } = _getActiveSegmentationInfo();
+      labelmapInterpolation.interpolate({
+        segmentationId,
+        segmentIndex,
+      });
+    },
     /**
      * Generates the selector props for the context menu, specific to
      * the cornerstone viewport, and then runs the context menu.
@@ -126,6 +250,7 @@ function commandsModule({
       viewportId,
       displaySetInstanceUID,
       referencedImageId,
+      options,
     }) => {
       const presentations = cornerstoneViewportService.getPresentations(viewportId);
       const { positionPresentationStore, setPositionPresentation, getPositionPresentationId } =
@@ -137,16 +262,18 @@ function commandsModule({
         ([key, value]) => key.includes(displaySetInstanceUID) && value.viewportId === viewportId
       )?.[0];
 
-      if (previousReferencedDisplaySetStoreKey) {
-        const presentationData = referencedImageId
-          ? {
-              ...presentations.positionPresentation,
-              viewReference: {
-                referencedImageId,
-              },
-            }
-          : presentations.positionPresentation;
+      // Create presentation data with referencedImageId and options if provided
+      const presentationData = referencedImageId
+        ? {
+            ...presentations.positionPresentation,
+            viewReference: {
+              referencedImageId,
+              ...options,
+            },
+          }
+        : presentations.positionPresentation;
 
+      if (previousReferencedDisplaySetStoreKey) {
         setPositionPresentation(previousReferencedDisplaySetStoreKey, presentationData);
         return;
       }
@@ -154,13 +281,12 @@ function commandsModule({
       // if not found means we have not visited that referencedDisplaySetInstanceUID before
       // so we need to grab the positionPresentationId directly from the store,
       // Todo: this is really hacky, we should have a better way for this
-
       const positionPresentationId = getPositionPresentationId({
         displaySetInstanceUIDs: [displaySetInstanceUID],
         viewportId,
       });
 
-      setPositionPresentation(positionPresentationId, presentations.positionPresentation);
+      setPositionPresentation(positionPresentationId, presentationData);
     },
     getNearbyToolData({ nearbyToolData, element, canvasCoordinates }) {
       return nearbyToolData ?? cstUtils.getAnnotationNearPoint(element, canvasCoordinates);
@@ -190,12 +316,6 @@ function commandsModule({
       return nearbyToolData?.metadata?.toolName && isAnnotation(nearbyToolData.metadata.toolName)
         ? nearbyToolData
         : null;
-    },
-    /** Delete the given measurement */
-    deleteMeasurement: ({ uid }) => {
-      if (uid) {
-        measurementServiceSource.remove(uid);
-      }
     },
     /**
      * Common logic for handling measurement label updates through dialog
@@ -345,25 +465,26 @@ function commandsModule({
     },
 
     removeMeasurement: ({ uid }) => {
-      measurementService.remove(uid);
+      if (Array.isArray(uid)) {
+        measurementService.removeMany(uid);
+      } else {
+        measurementService.remove(uid);
+      }
     },
 
     toggleLockMeasurement: ({ uid }) => {
       measurementService.toggleLockMeasurement(uid);
     },
 
-    toggleVisibilityMeasurement: ({ uid }) => {
-      measurementService.toggleVisibilityMeasurement(uid);
-    },
-
-    /**
-     * Clear the measurements
-     */
-    clearMeasurements: options => {
-      const { measurementFilter } = options;
-      measurementService.clearMeasurements(
-        measurementFilter ? measurementFilter.bind(options) : null
-      );
+    toggleVisibilityMeasurement: ({ uid, items, visibility }) => {
+      if (visibility === undefined && items?.length) {
+        visibility = !items[0].isVisible;
+      }
+      if (Array.isArray(uid)) {
+        measurementService.toggleVisibilityMeasurementMany(uid, visibility);
+      } else {
+        measurementService.toggleVisibilityMeasurement(uid, visibility);
+      }
     },
 
     /**
@@ -371,6 +492,43 @@ function commandsModule({
      */
     downloadCSVMeasurementsReport: ({ measurementFilter }) => {
       utils.downloadCSVReport(measurementService.getMeasurements(measurementFilter));
+    },
+
+    downloadCSVSegmentationReport: ({ segmentationId }) => {
+      const segmentation = segmentationService.getSegmentation(segmentationId);
+
+      const { representationData } = segmentation;
+      const { Labelmap } = representationData;
+      const { referencedImageIds } = Labelmap;
+
+      const firstImageId = referencedImageIds[0];
+
+      // find displaySet for firstImageId
+      const displaySet = displaySetService
+        .getActiveDisplaySets()
+        .find(ds => ds.imageIds?.some(i => i === firstImageId));
+
+      const {
+        SeriesNumber,
+        SeriesInstanceUID,
+        StudyInstanceUID,
+        SeriesDate,
+        SeriesTime,
+        SeriesDescription,
+      } = displaySet;
+
+      const additionalInfo = {
+        reference: {
+          SeriesNumber,
+          SeriesInstanceUID,
+          StudyInstanceUID,
+          SeriesDate,
+          SeriesTime,
+          SeriesDescription,
+        },
+      };
+
+      generateSegmentationCSVReport(segmentation, additionalInfo);
     },
 
     // Retrieve value commands
@@ -385,11 +543,18 @@ function commandsModule({
 
       viewportGridService.setActiveViewportId(viewportId);
     },
-    arrowTextCallback: ({ callback }) => {
+    arrowTextCallback: async ({ callback }) => {
       const labelConfig = customizationService.getCustomization('measurementLabels');
       const renderContent = customizationService.getCustomization('ui.labellingComponent');
-      callInputDialogAutoComplete(uiDialogService, callback, {}, labelConfig, renderContent);
+
+      const value = await callInputDialogAutoComplete({
+        uiDialogService,
+        labelConfig,
+        renderContent,
+      });
+      callback?.(value);
     },
+
     toggleCine: () => {
       const { viewports } = viewportGridService.getState();
       const { isCineEnabled } = cineService.getState();
@@ -416,7 +581,6 @@ function commandsModule({
       });
       viewport.render();
     },
-
     toggleViewportColorbar: ({ viewportId, displaySetInstanceUIDs, options = {} }) => {
       const hasColorbar = colorbarService.hasColorbar(viewportId);
       if (hasColorbar) {
@@ -425,7 +589,6 @@ function commandsModule({
       }
       colorbarService.addColorbar(viewportId, displaySetInstanceUIDs, options);
     },
-
     setWindowLevel(props) {
       const { toolGroupId } = props;
       const { viewportId } = _getActiveViewportEnabledElement();
@@ -745,15 +908,17 @@ function commandsModule({
       const options = { imageIndex: jumpIndex };
       csUtils.jumpToSlice(viewport.element, options);
     },
-    scroll: ({ direction }) => {
+    scroll: (options: ToolTypes.ScrollOptions) => {
       const enabledElement = _getActiveViewportEnabledElement();
+      // Allow either or direction for consistency in scroll implementation
+      options.delta ??= options.direction || 1;
+      options.direction ??= options.delta;
 
       if (!enabledElement) {
         return;
       }
 
       const { viewport } = enabledElement;
-      const options = { delta: direction };
 
       csUtils.scroll(viewport, options);
     },
@@ -846,7 +1011,7 @@ function commandsModule({
         });
       }
     },
-    setSourceViewportForReferenceLinesTool: ({ viewportId }) => {
+    setViewportForToolConfiguration: ({ viewportId, toolName }) => {
       if (!viewportId) {
         const { activeViewportId } = viewportGridService.getState();
         viewportId = activeViewportId ?? 'default';
@@ -854,9 +1019,15 @@ function commandsModule({
 
       const toolGroup = toolGroupService.getToolGroupForViewport(viewportId);
 
+      if (!toolGroup.hasTool(toolName)) {
+        return;
+      }
+
+      const prevConfig = toolGroup?.getToolConfiguration(toolName);
       toolGroup?.setToolConfiguration(
-        ReferenceLinesTool.toolName,
+        toolName,
         {
+          ...prevConfig,
           sourceViewportId: viewportId,
         },
         true // overwrite
@@ -1089,7 +1260,12 @@ function commandsModule({
      * @param props.segmentIndex - The index of the segment to activate
      */
     setActiveSegmentAndCenterCommand: ({ segmentationId, segmentIndex }) => {
-      const { segmentationService } = servicesManager.services;
+      const { segmentationService, viewportGridService } = servicesManager.services;
+      // set both active segmentation and active segment
+      segmentationService.setActiveSegmentation(
+        viewportGridService.getActiveViewportId(),
+        segmentationId
+      );
       segmentationService.setActiveSegment(segmentationId, segmentIndex);
       segmentationService.jumpToSegmentCenter(segmentationId, segmentIndex);
     },
@@ -1351,17 +1527,219 @@ function commandsModule({
         viewportGridService.getActiveViewportId()
       );
     },
+
     deleteActiveAnnotation: () => {
       const activeAnnotationsUID = cornerstoneTools.annotation.selection.getAnnotationsSelected();
       activeAnnotationsUID.forEach(activeAnnotationUID => {
         measurementService.remove(activeAnnotationUID);
       });
     },
+    setDisplaySetsForViewports: ({ viewportsToUpdate }) => {
+      const { cineService, viewportGridService } = servicesManager.services;
+      // Stopping the cine of modified viewports before changing the viewports to
+      // avoid inconsistent state and lost references
+      viewportsToUpdate.forEach(viewport => {
+        const state = cineService.getState();
+        const currentCineState = state.cines?.[viewport.viewportId];
+        cineService.setCine({
+          id: viewport.viewportId,
+          frameRate: currentCineState?.frameRate ?? state.default?.frameRate ?? 24,
+          isPlaying: false,
+        });
+      });
+
+      viewportGridService.setDisplaySetsForViewports(viewportsToUpdate);
+    },
     undo: () => {
       DefaultHistoryMemo.undo();
     },
     redo: () => {
       DefaultHistoryMemo.redo();
+    },
+    toggleSegmentPreviewEdit: ({ toggle }) => {
+      let labelmapTools = getLabelmapTools({ toolGroupService });
+      labelmapTools = labelmapTools.filter(tool => !tool.toolName.includes('Eraser'));
+      labelmapTools.forEach(tool => {
+        tool.configuration = {
+          ...tool.configuration,
+          preview: {
+            ...tool.configuration.preview,
+            enabled: toggle,
+          },
+        };
+      });
+    },
+    toggleSegmentSelect: ({ toggle }) => {
+      const toolGroupIds = toolGroupService.getToolGroupIds();
+      toolGroupIds.forEach(toolGroupId => {
+        const toolGroup = cornerstoneTools.ToolGroupManager.getToolGroup(toolGroupId);
+        if (toggle) {
+          toolGroup.setToolActive(cornerstoneTools.SegmentSelectTool.toolName);
+        } else {
+          toolGroup.setToolDisabled(cornerstoneTools.SegmentSelectTool.toolName);
+        }
+      });
+    },
+    toggleUseCenterSegmentIndex: ({ toggle }) => {
+      let labelmapTools = getLabelmapTools({ toolGroupService });
+      labelmapTools = labelmapTools.filter(tool => !tool.toolName.includes('Eraser'));
+      labelmapTools.forEach(tool => {
+        tool.configuration = {
+          ...tool.configuration,
+          useCenterSegmentIndex: toggle,
+        };
+      });
+    },
+    _handlePreviewAction: action => {
+      const labelmapTools = getLabelmapTools({ toolGroupService });
+      const { viewport } = _getActiveViewportEnabledElement();
+      const activeTools = labelmapTools.filter(
+        tool => tool.mode === 'Active' || tool.mode === 'Enabled'
+      );
+
+      activeTools.forEach(tool => {
+        tool[`${action}Preview`]();
+      });
+
+      if (segmentAI.enabled) {
+        segmentAI[`${action}Preview`](viewport.element);
+      }
+    },
+    acceptPreview: () => {
+      actions._handlePreviewAction('accept');
+    },
+    rejectPreview: () => {
+      actions._handlePreviewAction('reject');
+    },
+    clearMarkersForMarkerLabelmap: () => {
+      const { viewport } = _getActiveViewportEnabledElement();
+      const toolGroup = cornerstoneTools.ToolGroupManager.getToolGroupForViewport(viewport.id);
+      const toolInstance = toolGroup.getToolInstance('MarkerLabelmap');
+
+      if (!toolInstance) {
+        return;
+      }
+
+      toolInstance.clearMarkers(viewport);
+    },
+    interpolateScrollForMarkerLabelmap: () => {
+      const { viewport } = _getActiveViewportEnabledElement();
+      const toolGroup = cornerstoneTools.ToolGroupManager.getToolGroupForViewport(viewport.id);
+      const toolInstance = toolGroup.getToolInstance('MarkerLabelmap');
+
+      if (!toolInstance) {
+        return;
+      }
+
+      toolInstance.interpolateScroll(viewport, 1);
+    },
+    toggleLabelmapAssist: async () => {
+      const { viewport } = _getActiveViewportEnabledElement();
+      const newState = !segmentAI.enabled;
+      segmentAI.enabled = newState;
+
+      if (!segmentAIEnabled) {
+        await segmentAI.initModel();
+        segmentAIEnabled = true;
+      }
+
+      // set the brush tool to active
+      const toolGroupIds = toolGroupService.getToolGroupIds();
+      if (newState) {
+        actions.setToolActiveToolbar({
+          toolName: 'CircularBrushForAutoSegmentAI',
+          toolGroupIds: toolGroupIds,
+        });
+      } else {
+        toolGroupIds.forEach(toolGroupId => {
+          const toolGroup = cornerstoneTools.ToolGroupManager.getToolGroup(toolGroupId);
+          toolGroup.setToolPassive('CircularBrushForAutoSegmentAI');
+        });
+      }
+
+      if (segmentAI.enabled) {
+        segmentAI.initViewport(viewport);
+      }
+    },
+    setBrushSize: ({ value, toolNames }) => {
+      const brushSize = Number(value);
+
+      toolGroupService.getToolGroupIds()?.forEach(toolGroupId => {
+        if (toolNames?.length === 0) {
+          segmentationUtils.setBrushSizeForToolGroup(toolGroupId, brushSize);
+        } else {
+          toolNames?.forEach(toolName => {
+            segmentationUtils.setBrushSizeForToolGroup(toolGroupId, brushSize, toolName);
+          });
+        }
+      });
+    },
+    setThresholdRange: ({
+      value,
+      toolNames = [
+        'ThresholdCircularBrush',
+        'ThresholdSphereBrush',
+        'ThresholdCircularBrushDynamic',
+        'ThresholdSphereBrushDynamic',
+      ],
+    }) => {
+      const toolGroupIds = toolGroupService.getToolGroupIds();
+      if (!toolGroupIds?.length) {
+        return;
+      }
+
+      for (const toolGroupId of toolGroupIds) {
+        const toolGroup = toolGroupService.getToolGroup(toolGroupId);
+        toolNames?.forEach(toolName => {
+          toolGroup.setToolConfiguration(toolName, {
+            threshold: {
+              range: value,
+            },
+          });
+        });
+      }
+    },
+    increaseBrushSize: () => {
+      const toolGroupIds = toolGroupService.getToolGroupIds();
+      if (!toolGroupIds?.length) {
+        return;
+      }
+
+      for (const toolGroupId of toolGroupIds) {
+        const brushSize = segmentationUtils.getBrushSizeForToolGroup(toolGroupId);
+        segmentationUtils.setBrushSizeForToolGroup(toolGroupId, brushSize + 3);
+      }
+    },
+    decreaseBrushSize: () => {
+      const toolGroupIds = toolGroupService.getToolGroupIds();
+      if (!toolGroupIds?.length) {
+        return;
+      }
+
+      for (const toolGroupId of toolGroupIds) {
+        const brushSize = segmentationUtils.getBrushSizeForToolGroup(toolGroupId);
+        segmentationUtils.setBrushSizeForToolGroup(toolGroupId, brushSize - 3);
+      }
+    },
+    addNewSegment: () => {
+      const { segmentationService } = servicesManager.services;
+      const { activeViewportId } = viewportGridService.getState();
+      const activeSegmentation = segmentationService.getActiveSegmentation(activeViewportId);
+      segmentationService.addSegment(activeSegmentation.segmentationId);
+    },
+    loadSegmentationDisplaySetsForViewport: ({ viewportId, displaySetInstanceUIDs }) => {
+      const updatedViewports = getUpdatedViewportsForSegmentation({
+        viewportId,
+        servicesManager,
+        displaySetInstanceUIDs,
+      });
+
+      updatedViewports.forEach(viewport => {
+        viewportGridService.setDisplaySetsForViewport({
+          viewportId: viewport.viewportId,
+          displaySetInstanceUIDs: viewport.displaySetInstanceUIDs,
+        });
+      });
     },
   };
 
@@ -1391,9 +1769,6 @@ function commandsModule({
     toggleViewportColorbar: {
       commandFn: actions.toggleViewportColorbar,
     },
-    deleteMeasurement: {
-      commandFn: actions.deleteMeasurement,
-    },
     setMeasurementLabel: {
       commandFn: actions.setMeasurementLabel,
     },
@@ -1402,9 +1777,6 @@ function commandsModule({
     },
     updateMeasurement: {
       commandFn: actions.updateMeasurement,
-    },
-    clearMeasurements: {
-      commandFn: actions.clearMeasurements,
     },
     jumpToMeasurement: {
       commandFn: actions.jumpToMeasurement,
@@ -1512,8 +1884,8 @@ function commandsModule({
     setViewportColormap: {
       commandFn: actions.setViewportColormap,
     },
-    setSourceViewportForReferenceLinesTool: {
-      commandFn: actions.setSourceViewportForReferenceLinesTool,
+    setViewportForToolConfiguration: {
+      commandFn: actions.setViewportForToolConfiguration,
     },
     storePresentation: {
       commandFn: actions.storePresentation,
@@ -1629,8 +2001,26 @@ function commandsModule({
     deleteActiveAnnotation: {
       commandFn: actions.deleteActiveAnnotation,
     },
+    setDisplaySetsForViewports: actions.setDisplaySetsForViewports,
     undo: actions.undo,
     redo: actions.redo,
+    interpolateLabelmap: actions.interpolateLabelmap,
+    runSegmentBidirectional: actions.runSegmentBidirectional,
+    downloadCSVSegmentationReport: actions.downloadCSVSegmentationReport,
+    toggleSegmentPreviewEdit: actions.toggleSegmentPreviewEdit,
+    toggleSegmentSelect: actions.toggleSegmentSelect,
+    acceptPreview: actions.acceptPreview,
+    rejectPreview: actions.rejectPreview,
+    toggleUseCenterSegmentIndex: actions.toggleUseCenterSegmentIndex,
+    toggleLabelmapAssist: actions.toggleLabelmapAssist,
+    interpolateScrollForMarkerLabelmap: actions.interpolateScrollForMarkerLabelmap,
+    clearMarkersForMarkerLabelmap: actions.clearMarkersForMarkerLabelmap,
+    setBrushSize: actions.setBrushSize,
+    setThresholdRange: actions.setThresholdRange,
+    increaseBrushSize: actions.increaseBrushSize,
+    decreaseBrushSize: actions.decreaseBrushSize,
+    addNewSegment: actions.addNewSegment,
+    loadSegmentationDisplaySetsForViewport: actions.loadSegmentationDisplaySetsForViewport,
   };
 
   return {
