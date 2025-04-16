@@ -19,7 +19,7 @@ RUN yarn install
 ENV APP_CONFIG=config/docker-nginx-dcm4chee-keycloak.js
 
 # Build the application
-RUN yarn run build
+RUN yarn build:fast
 
 # Stage 2: Setup the NGINX environment with OAuth2 Proxy
 FROM nginx:alpine

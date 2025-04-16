@@ -50,6 +50,19 @@ function Header({
     }
   };
 
+  const handleLogout = () => {
+    window.location.href = '/oauth2/sign_out';
+  };
+
+  const allMenuOptions = [
+    ...menuOptions,
+    {
+      title: 'Logout',
+      icon: 'LogOut',
+      onClick: handleLogout,
+    },
+  ];
+
   return (
     <NavBar
       isSticky={isSticky}
@@ -92,7 +105,7 @@ function Header({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {menuOptions.map((option, index) => {
+                {allMenuOptions.map((option, index) => {
                   const IconComponent = option.icon
                     ? Icons[option.icon as keyof typeof Icons]
                     : null;
@@ -104,7 +117,7 @@ function Header({
                     >
                       {IconComponent && (
                         <span className="flex h-4 w-4 items-center justify-center">
-                          <Icons.ByName name={IconComponent.name} />
+                          <IconComponent />
                         </span>
                       )}
                       <span className="flex-1">{option.title}</span>

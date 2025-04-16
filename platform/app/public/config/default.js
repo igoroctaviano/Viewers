@@ -87,7 +87,7 @@ window.config = {
       ],
     },
   ],
-  defaultDataSourceName: 'dicomweb',
+  defaultDataSourceName: 'dicomweb-keycloak',
   /* Dynamic config allows user to pass "configUrl" query string this allows to load config without recompiling application. The regex will ensure valid configuration source */
   // dangerouslyUseDynamicConfig: {
   //   enabled: true,
@@ -99,6 +99,22 @@ window.config = {
   //   regex: /.*/,
   // },
   dataSources: [
+    {
+      namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
+      sourceName: 'dicomweb-keycloak',
+      configuration: {
+        friendlyName: 'Dcm4chee Server',
+        name: 'Dcm4chee',
+        wadoUriRoot: 'http://127.0.0.1/pacs',
+        qidoRoot: 'http://127.0.0.1/pacs',
+        wadoRoot: 'http://127.0.0.1/pacs',
+        qidoSupportsIncludeField: false,
+        imageRendering: 'wadors',
+        thumbnailRendering: 'wadors',
+        dicomUploadEnabled: true,
+        omitQuotationForMultipartRequest: true,
+      },
+    },
     {
       namespace: '@ohif/extension-default.dataSourcesModule.dicomweb',
       sourceName: 'dicomweb',
