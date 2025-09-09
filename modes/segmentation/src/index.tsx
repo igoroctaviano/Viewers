@@ -220,7 +220,7 @@ function modeFactory({ modeConfiguration }) {
     /** HangingProtocol used by the mode */
     // Commented out to just use the most applicable registered hanging protocol
     // The example is used for a grid layout to specify that as a preferred layout
-    hangingProtocol: ['@ohif/mnGrid'],
+    hangingProtocol: ['fourUp'],
     /** SopClassHandlers used by the mode */
     sopClassHandlers: [ohif.sopClassHandler, segmentation.sopClassHandler, dicomRT.sopClassHandler],
   };

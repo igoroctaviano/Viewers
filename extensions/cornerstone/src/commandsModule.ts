@@ -7,6 +7,7 @@ import {
   Types as CoreTypes,
   BaseVolumeViewport,
   getRenderingEngines,
+  geometryLoader,
 } from '@cornerstonejs/core';
 import {
   ToolGroupManager,
@@ -146,7 +147,7 @@ function commandsModule({
   }
 
   const actions = {
-    loadSegmentationsForActiveViewport: () => {
+    loadSegmentationsForActiveViewport: async () => {
       const { displaySetService, userAuthenticationService } = servicesManager.services;
 
       const getDerivedSequences = (displaySetUID: string): DisplaySet[] => {
@@ -161,9 +162,15 @@ function commandsModule({
       };
 
       const activeViewportId = viewportGridService.getActiveViewportId();
+      const viewports = Array.from(viewportGridService.getState().viewports.values());
+      const volume3dViewportFromGrid = viewports.find(
+        viewport => viewport.viewportOptions.toolGroupId === 'volume3d'
+      );
+      const volume3dViewport = cornerstoneViewportService.getCornerstoneViewport(
+        volume3dViewportFromGrid.viewportId
+      );
       const displaySetInstanceUIDs =
         viewportGridService.getDisplaySetsUIDsForViewport(activeViewportId);
-
       const derivedDisplayInstanceUIDs = getDerivedSequences(displaySetInstanceUIDs[0]).map(
         ds => ds.displaySetInstanceUID
       );
@@ -175,13 +182,47 @@ function commandsModule({
           await displaySet.load({ headers }).catch(err => {
             console.warn(`Failed to load display set ${displaySet.displaySetInstanceUID}:`, err);
           });
-          segmentationService.addSegmentationRepresentation(activeViewportId, {
+
+          await segmentationService.addSegmentationRepresentation(activeViewportId, {
             segmentationId: displaySet.displaySetInstanceUID,
             type:
               displaySet.Modality === 'SEG'
                 ? Enums.SegmentationRepresentations.Labelmap
                 : Enums.SegmentationRepresentations.Contour,
           });
+
+          const segmentation = segmentationService.getSegmentation(
+            displaySet.displaySetInstanceUID
+          );
+          const meshName = `${segmentation.label.toLowerCase()}.stl`;
+          const segmentColor = segmentationService.getSegmentColor(
+            activeViewportId,
+            segmentation.segmentationId,
+            1
+          );
+         const meshColor = [segmentColor[0], segmentColor[1], segmentColor[2]];
+          const mesh = (await geometryLoader.loadAndCacheGeometry(
+            `mesh:http://localhost:5002/${meshName}`,
+            {
+              type: CoreEnums.GeometryType.MESH,
+              geometryData: {
+                id: meshName,
+                format: CoreEnums.MeshType.STL,
+                color: meshColor,
+              } as CoreTypes.MeshData,
+            }
+          )) as CoreTypes.IGeometry;
+          
+          // Disable scalar coloring to prevent color overrides
+          const meshActor = (mesh.data as CoreTypes.IMesh).defaultActor;
+          const mapper = meshActor.getMapper();
+          mapper.setScalarVisibility(false);
+          mapper.setColorModeToDirectScalars();
+          
+          volume3dViewport.setActors([
+            ...volume3dViewport.getActors(),
+            { uid: mesh.id, actor: meshActor },
+          ]);
         }
       });
     },

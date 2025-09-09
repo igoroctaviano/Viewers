@@ -12,9 +12,21 @@ export const fourUp = {
   editableBy: {},
   protocolMatchingRules: [],
   imageLoadStrategy: 'interleaveCenter',
+  callbacks: {
+    onViewportDataInitialized: ['loadSegmentationsForActiveViewport'],
+  },
   displaySetSelectors: {
     activeDisplaySet: {
       seriesMatchingRules: [
+        {
+          attribute: 'SeriesInstanceUID',
+          constraint: {
+            equals: {
+              value: '1.3.6.1.4.1.5962.99.1.3755711238.460753512.1738922531590.1640.0',
+            },
+          },
+          required: true,
+        },
         {
           weight: 1,
           attribute: 'isReconstructable',
