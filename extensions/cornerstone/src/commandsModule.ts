@@ -826,7 +826,8 @@ function commandsModule({
            */
           const sourceAnnotation = annotation.state.getAnnotation(measurementUid);
           if (sourceAnnotation) {
-            const newVisibility = vis !== undefined ? vis : !sourceAnnotation.isVisible;
+            const currentVisibility = annotation.visibility.isAnnotationVisible(measurementUid);
+            const newVisibility = vis !== undefined ? vis : !currentVisibility;
             annotation.visibility.setAnnotationVisibility(measurementUid, newVisibility);
             cornerstoneViewportService.getRenderingEngine()?.render();
           }
