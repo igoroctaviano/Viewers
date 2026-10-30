@@ -5,5 +5,6 @@
   "Study not found in data source": "Study not found in data source",
   "Study {{studyInstanceUID}} was not found in {{source}}. Showing data from {{others}} only.": "Study {{studyInstanceUID}} was not found in {{source}}. Showing data from {{others}} only.",
   "Referenced series not found": "Referenced series not found",
-  "{{label}} ({{modality}}) references series {{seriesInstanceUID}}, which was not found in {{sources}}. It cannot be displayed over its source images.": "{{label}} ({{modality}}) references series {{seriesInstanceUID}}, which was not found in {{sources}}. It cannot be displayed over its source images."
+  "{{label}} ({{modality}}) references series {{seriesInstanceUID}}, which was not found in {{sources}}. It cannot be displayed over its source images.": "{{label}} ({{modality}}) references series {{seriesInstanceUID}}, which was not found in {{sources}}. It cannot be displayed over its source images.",
+  "{{sources}} could not be checked and may hold it.": "{{sources}} could not be checked and may hold it."
 }

@@ -15,6 +15,12 @@ export type DataAvailabilityConfig = {
 
 const DICOMWEB_NAMESPACE = /dataSourcesModule\.dicomweb$/;
 
+/**
+ * Google Cloud Healthcare API stores are diagnosed and reported by the GCP
+ * extension, which can tell the user why a store could not be read.
+ */
+const GCP_HEALTHCARE_HOST = 'healthcare.googleapis.com';
+
 let displaySetsSubscription: { unsubscribe: () => void } | null = null;
 
 /** Reads the study UIDs from the URL the same way the DICOMweb data source does. */
@@ -41,7 +47,8 @@ function getDataSourceLabel(sourceName: string, definition, dataSource): string 
 
 /**
  * Returns the DICOMweb data sources behind the active data source: each member
- * of a merge data source, or the active data source itself.
+ * of a merge data source, or the active data source itself. Sources without a
+ * QIDO root (for example `gcp` without a valid ?gcp= param) are skipped.
  */
 function getDataSourcesToCheck(extensionManager): CheckedDataSource[] {
   const activeDefinition = extensionManager.getActiveDataSourceDefinition();
@@ -60,10 +67,15 @@ function getDataSourcesToCheck(extensionManager): CheckedDataSource[] {
       if (!DICOMWEB_NAMESPACE.test(definition?.namespace ?? '') || !dataSource?.query?.series) {
         return null;
       }
+      const qidoRoot: string | undefined = dataSource.getConfig?.()?.qidoRoot;
+      if (!qidoRoot) {
+        return null;
+      }
       return {
         sourceName,
         label: getDataSourceLabel(sourceName, definition, dataSource),
         dataSource,
+        reportsOwnErrors: qidoRoot.includes(GCP_HEALTHCARE_HOST),
       };
     })
     .filter(Boolean);
@@ -72,14 +84,16 @@ function getDataSourcesToCheck(extensionManager): CheckedDataSource[] {
 /**
  * Notifies about stores that could not be queried or hold no data for the
  * study. When no store has the study, OHIF already routes to its "study not
- * found" page, so only failed queries are reported in that case.
+ * found" page, so only failed queries are reported in that case. GCP stores
+ * are left to the GCP extension.
  */
 function notifyStudyAvailability(
   { StudyInstanceUID, sources }: StudyAvailability,
   uiNotificationService
 ) {
-  const failed = sources.filter(source => source.status === 'failed');
-  const empty = sources.filter(source => source.status === 'empty');
+  const reported = sources.filter(source => !source.reportsOwnErrors);
+  const failed = reported.filter(source => source.status === 'failed');
+  const empty = reported.filter(source => source.status === 'empty');
   const found = sources.filter(source => source.status === 'found');
 
   failed.forEach(source => {
@@ -99,7 +113,7 @@ function notifyStudyAvailability(
         }
       ),
       type: 'error',
-      autoClose: false,
+      duration: Infinity,
     });
   });
 
@@ -139,7 +153,20 @@ function notifyMissingReferencedSeries(
     .filter(source => source.status !== 'failed')
     .map(source => source.label)
     .join(', ');
+  const unchecked = availability.sources
+    .filter(source => source.status === 'failed')
+    .map(source => source.label)
+    .join(', ');
   const label = displaySet.label || displaySet.SeriesDescription || displaySet.Modality;
+  const message = i18n.t(
+    'DataAvailability:{{label}} ({{modality}}) references series {{seriesInstanceUID}}, which was not found in {{sources}}. It cannot be displayed over its source images.',
+    {
+      label,
+      modality: displaySet.Modality,
+      seriesInstanceUID: displaySet.referencedSeriesInstanceUID,
+      sources: searched,
+    }
+  );
 
   console.warn(
     `[IDC] ${displaySet.Modality} ${displaySet.SeriesInstanceUID} references series ` +
@@ -148,17 +175,13 @@ function notifyMissingReferencedSeries(
   uiNotificationService.show({
     id: `idc-data-availability-reference-${displaySet.SeriesInstanceUID}`,
     title: i18n.t('DataAvailability:Referenced series not found'),
-    message: i18n.t(
-      'DataAvailability:{{label}} ({{modality}}) references series {{seriesInstanceUID}}, which was not found in {{sources}}. It cannot be displayed over its source images.',
-      {
-        label,
-        modality: displaySet.Modality,
-        seriesInstanceUID: displaySet.referencedSeriesInstanceUID,
-        sources: searched,
-      }
-    ),
+    message: unchecked
+      ? `${message} ${i18n.t('DataAvailability:{{sources}} could not be checked and may hold it.', {
+          sources: unchecked,
+        })}`
+      : message,
     type: 'warning',
-    autoClose: false,
+    duration: Infinity,
   });
 }
 

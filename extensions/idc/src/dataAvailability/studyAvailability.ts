@@ -5,6 +5,8 @@ export type SourceAvailability = {
   status: 'found' | 'empty' | 'failed';
   seriesInstanceUIDs: Set<string>;
   error?: unknown;
+  /** True when another extension reports this source's failures itself. */
+  reportsOwnErrors?: boolean;
 };
 
 export type StudyAvailability = {
@@ -15,6 +17,7 @@ export type StudyAvailability = {
 export type CheckedDataSource = {
   sourceName: string;
   label: string;
+  reportsOwnErrors?: boolean;
   dataSource: {
     query: { series: { search: (studyInstanceUid: string) => Promise<unknown[]> } };
   };
@@ -34,7 +37,7 @@ export async function checkStudyAvailability(
   );
 
   const sources = results.map((result, index): SourceAvailability => {
-    const { sourceName, label } = dataSources[index];
+    const { sourceName, label, reportsOwnErrors } = dataSources[index];
 
     if (result.status === 'rejected') {
       return {
@@ -43,6 +46,7 @@ export async function checkStudyAvailability(
         status: 'failed',
         seriesInstanceUIDs: new Set(),
         error: result.reason,
+        reportsOwnErrors,
       };
     }
 
@@ -56,6 +60,7 @@ export async function checkStudyAvailability(
       label,
       status: seriesInstanceUIDs.size ? 'found' : 'empty',
       seriesInstanceUIDs,
+      reportsOwnErrors,
     };
   });
 
@@ -86,7 +91,10 @@ export function isReferencedSeriesMissing(
   return !answered.some(source => source.seriesInstanceUIDs.has(referencedSeriesInstanceUID));
 }
 
-/** Extracts a readable reason from a dicomweb-client or fetch error. */
+/**
+ * Extracts a readable reason from a dicomweb-client or fetch error. Status 0
+ * means the request got no response at all (offline, firewall or CORS).
+ */
 export function describeError(error: unknown): string {
   const { status, message, request } = (error ?? {}) as {
     status?: number;
@@ -94,6 +102,9 @@ export function describeError(error: unknown): string {
     request?: { statusText?: string };
   };
   const statusText = request?.statusText;
+  if (status === 0) {
+    return 'no response from the server';
+  }
   if (status) {
     return statusText ? `HTTP ${status} ${statusText}` : `HTTP ${status}`;
   }
